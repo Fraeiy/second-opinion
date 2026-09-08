@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { buildModeConfig, classifyBinanceTool, detectBinanceCapability, isToolAllowed, parseModeCommand, TRADING_PERMISSION_UNAVAILABLE } from "@/tui/modes";
+import { describe, expect, it, vi } from "vitest";
+import { buildModeConfig, classifyBinanceTool, detectBinanceCapability, isToolAllowed, parseModeCommand, TRADING_PERMISSION_UNAVAILABLE, waitForBinanceStatus } from "@/tui/modes";
 
 const tools = {
   "futures_usds.symbolPriceTicker": { description: "Symbol Price Ticker" },
@@ -42,6 +42,20 @@ describe("Second Opinion operating modes", () => {
     expect(detectBinanceCapability({ name: "binance-agent-os", runtimeStatus: "connected", authStatus: "oAuth", tools })).toBe("Trading");
     expect(detectBinanceCapability({ name: "binance-agent-os", runtimeStatus: "starting", authStatus: "oAuth", tools })).toBe("Unknown");
     expect(classifyBinanceTool("asset.universalTransfer", tools["asset.universalTransfer"])).toBe("transfer");
+  });
+
+  it("waits for Binance MCP startup before detecting capability", async () => {
+    const statuses = [
+      { name: "binance-agent-os", runtimeStatus: "starting", authStatus: "oAuth", tools: {} },
+      { name: "binance-agent-os", runtimeStatus: "connected", authStatus: "oAuth", tools },
+    ];
+    const fetchStatus = vi.fn().mockImplementation(async () => ({ data: [statuses.shift()] }));
+
+    const status = await waitForBinanceStatus(fetchStatus, { pollMs: 0, timeoutMs: 100 });
+
+    expect(fetchStatus).toHaveBeenCalledTimes(2);
+    expect(status?.runtimeStatus).toBe("connected");
+    expect(detectBinanceCapability(status)).toBe("Trading");
   });
 
   it("parses every documented typed mode command", () => {

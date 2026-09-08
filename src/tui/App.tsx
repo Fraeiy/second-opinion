@@ -4,7 +4,7 @@ import { Box, Text, useApp, useInput, useStdin } from "ink";
 import path from "node:path";
 import { parseDemoRequest, runDemoReview } from "./demo-review";
 import { AppServerClient, normalizeEvent, type JsonRpcMessage } from "./protocol";
-import { buildModeConfig, defaultModeForCapability, detectBinanceCapability, isToolAllowed, MODE_OPTIONS, modeDeveloperInstructions, modeLabel, parseModeCommand, TRADING_PERMISSION_UNAVAILABLE, type BinanceCapability, type McpToolDefinition, type OperatingMode } from "./modes";
+import { buildModeConfig, defaultModeForCapability, detectBinanceCapability, isToolAllowed, MODE_OPTIONS, modeDeveloperInstructions, modeLabel, parseModeCommand, TRADING_PERMISSION_UNAVAILABLE, waitForBinanceStatus, type BinanceCapability, type McpToolDefinition, type OperatingMode } from "./modes";
 
 type Approval = { message: JsonRpcMessage; respond: (value: unknown) => void } | null;
 const yellow = "#F0B90B";
@@ -54,7 +54,16 @@ export function App() {
       }
       setApproval({ message: m, respond });
     });
-    (async () => { try { await client.start(); if (!alive) return; setStatus("connected"); await client.startThread(); try { const r = await client.mcpStatus(); const entries = r.data ?? []; const b = entries.find((x: any) => /binance/i.test(x.name)); if (!b) { await client.configureThread(buildModeConfig("market", {}), modeDeveloperInstructions("market")); setBinance("not configured"); setCapability("Unknown"); setMode("market"); return; } const tools = b.tools ?? {}; const detected = detectBinanceCapability(b); const initialMode = defaultModeForCapability(detected); setBinance(`${b.runtimeStatus ?? "configured"}${b.authStatus && b.authStatus !== "unknown" ? ` / ${b.authStatus}` : ""}`); setBinanceTools(tools); setCapability(detected); await client.configureThread(buildModeConfig(initialMode, tools), modeDeveloperInstructions(initialMode)); if (alive) { setMode(initialMode); setSelectedModeIndex(MODE_OPTIONS.findIndex((option) => option.mode === initialMode)); } } catch { await client.configureThread(buildModeConfig("market", {}), modeDeveloperInstructions("market")); setBinance("unavailable"); setCapability("Unknown"); setMode("market"); } } catch (e) { if (alive) { setStatus("unavailable"); setError(e instanceof Error ? e.message : String(e)); } } })();
+    (async () => { try { await client.start(); if (!alive) return; setStatus("connected"); await client.startThread(); try {
+      const b = await waitForBinanceStatus(() => client.mcpStatus(), { onUpdate: (entry) => {
+        if (alive) setBinance(`${entry.runtimeStatus ?? "checking"}${entry.authStatus && entry.authStatus !== "unknown" ? ` / ${entry.authStatus}` : ""}`);
+      } });
+      if (!b) { await client.configureThread(buildModeConfig("market", {}), modeDeveloperInstructions("market")); setBinance("not configured"); setCapability("Unknown"); setMode("market"); return; }
+      const tools = b.tools ?? {}; const detected = detectBinanceCapability(b); const initialMode = defaultModeForCapability(detected);
+      setBinance(`${b.runtimeStatus ?? "configured"}${b.authStatus && b.authStatus !== "unknown" ? ` / ${b.authStatus}` : ""}`); setBinanceTools(tools); setCapability(detected);
+      await client.configureThread(buildModeConfig(initialMode, tools), modeDeveloperInstructions(initialMode));
+      if (alive) { setMode(initialMode); setSelectedModeIndex(MODE_OPTIONS.findIndex((option) => option.mode === initialMode)); }
+    } catch { await client.configureThread(buildModeConfig("market", {}), modeDeveloperInstructions("market")); setBinance("unavailable"); setCapability("Unknown"); setMode("market"); } } catch (e) { if (alive) { setStatus("unavailable"); setError(e instanceof Error ? e.message : String(e)); } } })();
     return () => { alive = false; client.shutdown(); };
   }, [client]);
 

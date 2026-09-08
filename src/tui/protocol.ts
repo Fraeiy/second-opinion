@@ -122,7 +122,12 @@ export class AppServerClient {
         });
       } catch (error) { reject(appServerStartupError(error, this.cwd, launch)); return; }
       this.proc.once("error", (error) => reject(appServerStartupError(error, this.cwd, launch)));
-      this.proc.stderr.on("data", (b) => { if (String(b).toLowerCase().includes("error")) this.eventHandler?.({ method: "error", params: { message: String(b).trim() } }); });
+      // Transient background warnings are written to stderr even while JSON-RPC
+      // remains healthy. Drain the pipe without presenting those as fatal errors.
+      this.proc.stderr.on("data", () => {});
+      this.proc.once("exit", (code, signal) => {
+        if (code && code !== 0) this.eventHandler?.({ method: "error", params: { message: `Codex App Server exited unexpectedly (${signal ?? `code ${code}`}).` } });
+      });
       this.lineReader = readline.createInterface({ input: this.proc.stdout });
       this.lineReader.on("line", (line) => this.receive(line));
       this.request("initialize", { clientInfo: { name: "second-opinion-tui", title: "Second Opinion", version: "0.1.0" }, capabilities: null }).then((v) => {

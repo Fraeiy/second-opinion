@@ -15,6 +15,22 @@ export type BinanceStatus = {
   tools?: Record<string, McpToolDefinition | undefined>;
 };
 
+export async function waitForBinanceStatus(
+  fetchStatus: () => Promise<{ data?: BinanceStatus[] }>,
+  options: { timeoutMs?: number; pollMs?: number; onUpdate?: (status: BinanceStatus) => void } = {},
+): Promise<BinanceStatus | undefined> {
+  const deadline = Date.now() + (options.timeoutMs ?? 45_000);
+  const pollMs = options.pollMs ?? 500;
+  while (true) {
+    const result = await fetchStatus();
+    const status = result.data?.find((entry) => /binance/i.test(entry.name ?? ""));
+    if (!status) return undefined;
+    options.onUpdate?.(status);
+    if (status.runtimeStatus === "connected" || Date.now() >= deadline) return status;
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+}
+
 export const MODE_OPTIONS: Array<{ mode: OperatingMode; label: string; description: string }> = [
   { mode: "market", label: "Market Data", description: "Public market information only" },
   { mode: "read", label: "Read Only", description: "Market data, balances and positions" },
