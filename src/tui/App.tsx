@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdin } from "ink";
 import path from "node:path";
 import { parseDemoRequest, runDemoReview } from "./demo-review";
+import { parseSimplePriceQuery, runSimplePriceQuery } from "./market-query";
+import { formatConversationText } from "./presentation";
 import { AppServerClient, normalizeEvent, type JsonRpcMessage } from "./protocol";
 import { buildModeConfig, defaultModeForCapability, detectBinanceCapability, isToolAllowed, MODE_OPTIONS, modeDeveloperInstructions, modeLabel, parseModeCommand, TRADING_PERMISSION_UNAVAILABLE, waitForBinanceStatus, type BinanceCapability, type McpToolDefinition, type OperatingMode } from "./modes";
 
@@ -39,14 +41,22 @@ export function App() {
   const [input, setInput] = useState(""); const [history, setHistory] = useState<Array<{ role: string; text: string }>>([]); const [agentText, setAgentText] = useState("");
   const [activities, setActivities] = useState<string[]>([]); const [report, setReport] = useState<any>(null); const [error, setError] = useState(""); const [approval, setApproval] = useState<Approval>(null); const [turnId, setTurnId] = useState<string>();
   const [saferAccepted, setSaferAccepted] = useState(false); const [previewConfirmed, setPreviewConfirmed] = useState(false); const [tradeRequested, setTradeRequested] = useState(false); const [turnActive, setTurnActive] = useState(false);
-  const modeRef = useRef<OperatingMode | null>(null); const toolsRef = useRef<Record<string, McpToolDefinition | undefined>>({}); const turnIdRef = useRef<string | undefined>(undefined); const agentTextRef = useRef("");
+  const modeRef = useRef<OperatingMode | null>(null); const toolsRef = useRef<Record<string, McpToolDefinition | undefined>>({}); const turnIdRef = useRef<string | undefined>(undefined); const agentTextRef = useRef(""); const messagePhasesRef = useRef(new Map<string, "commentary" | "final_answer" | null>());
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => { toolsRef.current = binanceTools; }, [binanceTools]);
   useEffect(() => { turnIdRef.current = turnId; }, [turnId]);
 
   useEffect(() => { let alive = true;
-    client.onMessage((m) => { const e = normalizeEvent(m); if (!e) return; if (e.kind === "agent-start") { agentTextRef.current = ""; setAgentText(""); } if (e.kind === "agent") { agentTextRef.current += e.text; setAgentText(agentTextRef.current); } if (e.kind === "activity") setActivities((v) => v.at(-1) === e.label ? v : [...v.slice(-7), e.label]); if (e.kind === "mcp") { setBinance("connected"); setActivities((v) => [...v.slice(-7), `Binance: ${e.tool}`]); const activeMode = modeRef.current; if (activeMode && /binance/i.test(e.server) && e.status === "inProgress" && !isToolAllowed(activeMode, e.tool, toolsRef.current[e.tool])) { setError(`Blocked ${e.tool}: it is not allowed in ${modeLabel(activeMode)} mode.`); if (turnIdRef.current) void client.interrupt(turnIdRef.current); } } if (e.kind === "turn") { const active = e.status === "inProgress"; setTurnActive(active); setTurnId((current) => m.params?.turn?.id ?? current); if (!active) { const reply = agentTextRef.current.trim(); if (reply) setHistory((v) => [...v, { role: "Second Opinion", text: reply }]); agentTextRef.current = ""; setAgentText(""); setActivities((v) => [...v.slice(-7), "Response complete"]); } } if (e.kind === "error") { setError(e.message); setActivities((v) => [...v.slice(-7), "Request failed"]); } });
+    client.onMessage((m) => { const e = normalizeEvent(m); if (!e) return;
+      if (e.kind === "agent-start") { messagePhasesRef.current.set(e.id, e.phase); if (e.phase === "final_answer") { agentTextRef.current = ""; setAgentText(""); } else setActivities((v) => v.at(-1) === "Codex is working" ? v : [...v.slice(-7), "Codex is working"]); }
+      if (e.kind === "agent" && messagePhasesRef.current.get(e.id) === "final_answer") agentTextRef.current += e.text;
+      if (e.kind === "agent-complete") { messagePhasesRef.current.set(e.id, e.phase); if (e.phase === "final_answer") { const answer = formatConversationText(e.text); agentTextRef.current = answer; setAgentText(answer); } else setActivities((v) => v.at(-1) === "Codex progress updated" ? v : [...v.slice(-7), "Codex progress updated"]); }
+      if (e.kind === "activity") setActivities((v) => v.at(-1) === e.label ? v : [...v.slice(-7), e.label]);
+      if (e.kind === "mcp") { setBinance("connected"); setActivities((v) => [...v.slice(-7), `Binance: ${e.tool}`]); const activeMode = modeRef.current; if (activeMode && /binance/i.test(e.server) && e.status === "inProgress" && !isToolAllowed(activeMode, e.tool, toolsRef.current[e.tool])) { setError(`Blocked ${e.tool}: it is not allowed in ${modeLabel(activeMode)} mode.`); if (turnIdRef.current) void client.interrupt(turnIdRef.current); } }
+      if (e.kind === "turn") { const active = e.status === "inProgress"; setTurnActive(active); setTurnId((current) => m.params?.turn?.id ?? current); if (!active) { const reply = agentTextRef.current.trim(); if (reply) setHistory((v) => [...v, { role: "Second Opinion", text: reply }]); agentTextRef.current = ""; setAgentText(""); messagePhasesRef.current.clear(); setActivities((v) => [...v.slice(-7), "Response complete"]); } }
+      if (e.kind === "error") { setError(e.message); setActivities((v) => [...v.slice(-7), "Request failed"]); }
+    });
     client.onServerRequest((m, respond) => {
       const serverName = String(m.params?.serverName ?? ""); const requestText = JSON.stringify(m.params ?? {});
       if (modeRef.current !== "trading" && /binance/i.test(serverName) && /order|cancel|trade|transfer|withdraw|deposit|borrow|repay/i.test(requestText)) {
@@ -89,12 +99,23 @@ export function App() {
     const command = parseModeCommand(text);
     if (command) { setInput(""); if (command === "selector") setSelectorOpen(true); else requestMode(command); return; }
     setInput(""); setHistory(v => [...v, { role: "You", text }]); setReport(null); setAgentText(""); setError(""); setSaferAccepted(false); setPreviewConfirmed(false);
-    const request = parseDemoRequest(text); setTradeRequested(Boolean(request));
+    const request = parseDemoRequest(text); const priceQuery = parseSimplePriceQuery(text); setTradeRequested(Boolean(request));
+    if (priceQuery) {
+      setActivities(["Checking Binance\u2026"]);
+      if (status !== "connected" || !mode || Object.keys(binanceTools).length === 0) { setError("Binance is still connecting. Please retry once the header shows connected."); return; }
+      setTurnActive(true);
+      try {
+        const answer = await runSimplePriceQuery(priceQuery, Object.keys(binanceTools), (tool, args) => client.request("mcpServer/tool/call", { threadId: client.threadId, server: "binance-agent-os", tool, arguments: args }));
+        setHistory((v) => [...v, { role: "Second Opinion", text: answer }]); setActivities(["Binance price received"]);
+      } catch (e) { setError(e instanceof Error ? e.message : "Binance price data is unavailable. Please retry."); setActivities(["Binance request failed"]); }
+      finally { setTurnActive(false); }
+      return;
+    }
     if (!request) {
       if (status !== "connected" || !mode) { setError("Codex is still connecting. Please retry once ready."); return; }
       setTurnActive(true); setActivities(["Codex is responding"]);
       try {
-        const started = await client.startChatTurn(text);
+        const started = await client.startChatTurn(text, "low");
         const id = started?.turn?.id;
         if (id) { setTurnId(String(id)); turnIdRef.current = String(id); }
       } catch (e) {
@@ -103,7 +124,7 @@ export function App() {
       return;
     }
     if (status !== "connected" || !mode) { setError("Binance is still connecting. Please retry once ready."); return; }
-    setTurnActive(true); setActivities(["Reading public Binance price"]);
+    setTurnActive(true); setActivities(["Reading public Binance price", "Running full deterministic risk analysis"]);
     try {
       const result = await runDemoReview(text, Object.keys(binanceTools), async (tool, args) => {
         let timer: ReturnType<typeof setTimeout> | undefined;

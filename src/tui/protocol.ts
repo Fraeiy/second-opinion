@@ -5,8 +5,9 @@ import { appServerStartupError, normalizeRepositoryCwd, resolveCodexLaunch, type
 
 export type JsonRpcMessage = { id?: string | number; method?: string; params?: any; result?: any; error?: { code?: number; message?: string; data?: unknown } };
 export type NormalizedEvent =
-  | { kind: "agent-start" }
-  | { kind: "agent"; text: string }
+  | { kind: "agent-start"; id: string; phase: "commentary" | "final_answer" | null }
+  | { kind: "agent"; id: string; text: string }
+  | { kind: "agent-complete"; id: string; phase: "commentary" | "final_answer" | null; text: string }
   | { kind: "activity"; label: string }
   | { kind: "turn"; status: string }
   | { kind: "mcp"; id?: string; server: string; tool: string; status?: string; arguments?: unknown; readOnlyHint?: boolean | null }
@@ -68,18 +69,19 @@ export const RISK_OUTPUT_SCHEMA = {
 export function normalizeEvent(message: JsonRpcMessage): NormalizedEvent | null {
   const p = message.params ?? {};
   switch (message.method) {
-    case "item/agentMessage/delta": return { kind: "agent", text: String(p.delta ?? "") };
+    case "item/agentMessage/delta": return { kind: "agent", id: String(p.itemId ?? ""), text: String(p.delta ?? "") };
     case "turn/started": return { kind: "turn", status: "inProgress" };
     case "turn/completed": return { kind: "turn", status: String(p.turn?.status ?? "completed") };
     case "item/started": {
       const item = p.item ?? {};
-      if (item.type === "agentMessage") return { kind: "agent-start" };
+      if (item.type === "agentMessage") return { kind: "agent-start", id: String(item.id ?? ""), phase: item.phase ?? null };
       if (item.type === "mcpToolCall") return { kind: "mcp", id: item.id, server: item.server, tool: item.tool, status: item.status, arguments: item.arguments, readOnlyHint: item.readOnlyHint };
       if (item.type === "commandExecution") return { kind: "activity", label: "Running a project command" };
       return null;
     }
     case "item/completed": {
       const item = p.item ?? {};
+      if (item.type === "agentMessage") return { kind: "agent-complete", id: String(item.id ?? ""), phase: item.phase ?? null, text: String(item.text ?? "") };
       if (item.type === "mcpToolCall") return { kind: "mcp", id: item.id, server: item.server, tool: item.tool, status: item.status, arguments: item.arguments, readOnlyHint: item.readOnlyHint };
       return null;
     }
@@ -167,16 +169,17 @@ export class AppServerClient {
   }
   async mcpStatus() { return this.request("mcpServerStatus/list", { cursor: null, limit: 50, detail: "toolsAndAuthOnly", threadId: this.threadId ?? null }); }
   async mcpOauthLogin(name: string) { return this.request("mcpServer/oauth/login", { name, threadId: this.threadId ?? null }); }
-  async startTurn(text: string, skillPath: string) {
+  async startRiskTurn(text: string) {
     if (!this.threadId) await this.startThread();
-    return this.request("turn/start", { threadId: this.threadId, cwd: this.cwd, input: [{ type: "text", text, text_elements: [] }, { type: "skill", name: "second-opinion", path: skillPath }], outputSchema: RISK_OUTPUT_SCHEMA });
+    return this.request("turn/start", { threadId: this.threadId, cwd: this.cwd, input: [{ type: "text", text, text_elements: [] }], effort: "high", outputSchema: RISK_OUTPUT_SCHEMA });
   }
-  async startChatTurn(text: string) {
+  async startChatTurn(text: string, effort: "low" | "medium" = "low") {
     if (!this.threadId) await this.startThread();
     return this.request("turn/start", {
       threadId: this.threadId,
       cwd: this.cwd,
       input: [{ type: "text", text, text_elements: [] }],
+      effort,
     });
   }
   interrupt(turnId: string) { return this.request("turn/interrupt", { threadId: this.threadId, turnId }); }

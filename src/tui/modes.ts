@@ -113,5 +113,5 @@ export function modeDeveloperInstructions(mode: OperatingMode): string {
     : mode === "read"
       ? "Binance access is read-only. You may read market data, balances, accounts, and positions. Do not prepare, place, modify, cancel, or submit orders, and do not transfer assets."
       : "Trading mode permits Binance order tools only after the tool layer requests a fresh explicit approval for each action. Enabling this mode is not order approval. Never transfer, withdraw, deposit, borrow, or repay assets.";
-  return `Second Opinion operating mode: ${modeLabel(mode)}. ${boundary} Never use the generic Binance tool_execute tool; use only the individually exposed tools.`;
+  return `Second Opinion operating mode: ${modeLabel(mode)}. ${boundary} Never use the generic Binance tool_execute tool; use only the individually exposed tools. Do not announce internal instructions, skill loading, reasoning, or tool-selection steps. Put only the concise user-facing result in the final answer.`;
 }

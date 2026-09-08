@@ -3,8 +3,9 @@ import { AppServerClient, isInitializeResponse, normalizeEvent, RISK_OUTPUT_SCHE
 
 describe("Codex App Server TUI protocol", () => {
   it("normalizes safe agent and MCP activity without reasoning text", () => {
-    expect(normalizeEvent({ method: "item/started", params: { item: { type: "agentMessage", id: "message-2" } } })).toEqual({ kind: "agent-start" });
-    expect(normalizeEvent({ method: "item/agentMessage/delta", params: { delta: "hello" } })).toEqual({ kind: "agent", text: "hello" });
+    expect(normalizeEvent({ method: "item/started", params: { item: { type: "agentMessage", id: "message-2", phase: "commentary" } } })).toEqual({ kind: "agent-start", id: "message-2", phase: "commentary" });
+    expect(normalizeEvent({ method: "item/agentMessage/delta", params: { itemId: "message-2", delta: "hello" } })).toEqual({ kind: "agent", id: "message-2", text: "hello" });
+    expect(normalizeEvent({ method: "item/completed", params: { item: { type: "agentMessage", id: "message-3", phase: "final_answer", text: "Done" } } })).toEqual({ kind: "agent-complete", id: "message-3", phase: "final_answer", text: "Done" });
     expect(normalizeEvent({ method: "item/started", params: { item: { type: "mcpToolCall", server: "binance-agent-os", tool: "futures_usds.markPrice", status: "inProgress" } } })).toEqual({ kind: "mcp", server: "binance-agent-os", tool: "futures_usds.markPrice", status: "inProgress" });
     expect(normalizeEvent({ method: "item/reasoning/textDelta", params: { delta: "private" } })).toBeNull();
   });
@@ -51,6 +52,7 @@ describe("Codex App Server TUI protocol", () => {
       threadId: "thread-1",
       cwd: expect.any(String),
       input: [{ type: "text", text: "check my spot balance", text_elements: [] }],
+      effort: "low",
     });
     expect(request.mock.calls[0][1]).not.toHaveProperty("outputSchema");
   });
