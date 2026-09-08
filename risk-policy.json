@@ -1,0 +1,28 @@
+{
+  "lowMax": 29,
+  "moderateMax": 54,
+  "highMax": 74,
+  "missingStopLossPenalty": 15,
+  "maxPlannedLossPercentExtreme": 5,
+  "portfolioExposureWarnPercent": 25,
+  "portfolioExposureCriticalPercent": 50,
+  "leveragePenalties": {
+    "above3x": 5,
+    "above5x": 12,
+    "above10x": 22,
+    "above20x": 35
+  },
+  "volatilityWarnPercent": 3,
+  "volatilityCriticalPercent": 8,
+  "spreadWarnBps": 10,
+  "spreadCriticalBps": 40,
+  "fundingRateWarnPercent": 0.05,
+  "fundingRateCriticalPercent": 0.15,
+  "imbalanceWarnAbs": 0.35,
+  "saferAltMaxLeverage": 5,
+  "saferAltMaxPortfolioLossPercent": 1,
+  "extremeDefaultsToReject": true,
+  "highPrefersReduce": true,
+  "maxDataAgeSeconds": 120,
+  "futureTimestampToleranceSeconds": 5
+}

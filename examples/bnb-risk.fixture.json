@@ -1,0 +1,21 @@
+{
+  "mode": "fixture",
+  "text": "I want to open a $200 20x BNB long. Use Second Opinion to check it first.",
+  "market": {
+    "symbol": "BNBUSDT", "marketType": "perpetual", "lastPrice": 600,
+    "timestamp": "2026-09-07T12:00:00.000Z", "bid": 599.9, "ask": 600.1,
+    "fundingRate": 0.0001,
+    "closes": [600,600,600,600,600,600,600,600,600,600,600,600,600,600],
+    "bids": [[599.9, 10]], "asks": [[600.1, 10]]
+  },
+  "portfolio": {
+    "totalEquityUsd": 1000, "availableMarginUsd": 800,
+    "positions": [], "isSimulated": true, "label": "Simulated test portfolio"
+  },
+  "provenance": {
+    "source": "fixture", "marketTool": "fixture", "accountTool": "fixture",
+    "positionsTool": "fixture", "accountTimestamp": "2026-09-07T12:00:00.000Z",
+    "positionsTimestamp": "2026-09-07T12:00:00.000Z",
+    "symbolValidated": true, "positionsComplete": true
+  }
+}
